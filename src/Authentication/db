@@ -1,0 +1,34 @@
+-- create table
+
+CREATE TABLE "users" (
+    id SERIAL PRIMARY KEY,
+    clinic_name VARCHAR(255) ,
+    dentist_full_name VARCHAR(255) ,
+    clinic_website VARCHAR(255),
+    email VARCHAR(255) NOT NULL UNIQUE,
+    phone VARCHAR(20) ,
+    clinic_size INT,
+    user_role VARCHAR(50),
+    login_type VARCHAR(50),
+    profile_picture TEXT;
+    patients_average_per_week INT,
+    services_frequently TEXT,
+    in_house_arch_lab_yn BOOLEAN DEFAULT FALSE,
+    arch_digital_workflow_yn BOOLEAN DEFAULT FALSE,
+    activation_link VARCHAR(255),
+    activation_link_expire TIMESTAMP,
+    activated_yn BOOLEAN DEFAULT FALSE,
+    password VARCHAR(255) 
+);
+
+
+
+
+CREATE TABLE otp (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL,
+    otp VARCHAR(6) NOT NULL,
+    expiry TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+);
