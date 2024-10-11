@@ -1,11 +1,10 @@
 const fs = require("fs");
 const path = require("path");
-const pool = require("../../database");
 require("dotenv").config();
-const query = require("./queries");
 const nodemailer = require("nodemailer");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const { Users, OtpCollection } = require("../Config/firebaseConfig");
 
 // Generate OTP
 const generateOtp = () => {
@@ -14,7 +13,7 @@ const generateOtp = () => {
 };
 
 // Function to send OTP email
-const sendOtpEmail = async (email, otp,userName) => {
+const sendOtpEmail = async (email, otp, userName) => {
   // Create a transporter for nodemailer
   const templatePath = path.join(
     __dirname,
@@ -45,51 +44,43 @@ const sendOtpEmail = async (email, otp,userName) => {
   return transporter.sendMail(mailOptions);
 };
 
+// Function to create normal user
 const creeateUser = async (req, res) => {
   const user = req.body;
 
-  const token = jwt.sign({ email: user.email }, process.env.JWT_SECRET, {
-    expiresIn: "1h",
-  });
+  try {
+    const token = jwt.sign({ email: user.email }, process.env.JWT_SECRET, {
+      expiresIn: "1h",
+    });
 
-  const activationLink = `http://localhost:3000/set-password/${token}`;
+    const activationLink = `http://localhost:3000/set-password/${token}`;
 
-  const activationLinkExpire = new Date(Date.now() + 5 * 60000).toISOString();
+    const activationLinkExpire = new Date(Date.now() + 5 * 60000).toISOString();
 
-  const saltRounds = 10; // Number of salt rounds
-  const hashedPassword = await bcrypt.hash(
-    user.password?.toString(),
-    saltRounds
-  );
-
-  const values = [
-    user.clinic_name,
-    user.dentist_full_name,
-    user.clinic_website,
-    user.email,
-    user.phone,
-    user.clinic_size,
-    user.patients_average_per_week,
-    user.services_frequently,
-    user.in_house_arch_lab_yn,
-    user.arch_digital_workflow_yn,
-    activationLink,
-    activationLinkExpire,
-    user.activated_yn,
-    hashedPassword,
-  ];
-
-  pool.query(query.createUserQuery, values, async (error, results) => {
-    console.log(error);
-    if (error) {
-        if (error.code === '23505') {
-            // Customize the error message for the duplicate email constraint
-          return  res.status(400).json({ error: 'Email already exists' });
-        }else{
-            return res.status(500).json({ error: "Database error occurred" });
-        }
-     
+    const snapshot = await Users.where("email", "==", user.email).get();
+    if (!snapshot.empty) {
+      console.log("Email already exists.");
+      return res.status(400).json({ message: "Email already exists" });
     }
+    await Users.add({
+      email: user.email || "",
+      clinic_name: user.clinic_name || "",
+      dentist_full_name: user.dentist_full_name || "",
+      clinic_website: user.clinic_website || "",
+      phone: user.phone || undefined,
+      clinic_size: user.clinic_size || "",
+      patients_average_per_week: user.patients_average_per_week || "",
+      services_frequently: user.services_frequently || "",
+      in_house_arch_lab_yn: user.in_house_arch_lab_yn || "",
+      arch_digital_workflow_yn: user.arch_digital_workflow_yn || "",
+      activationLink: activationLink || "",
+      activationLinkExpire: activationLinkExpire || "",
+      activated_yn: false,
+      login_type: "N",
+      roles: "",
+      profile_picture: "",
+    });
+
     // Send activation link via email
     try {
       // Read the email template
@@ -130,15 +121,16 @@ const creeateUser = async (req, res) => {
       };
 
       transporter.sendMail(mailOptions);
-      // Send response back
-      res.status(200).json(results.rows);
-    } catch (emailError) {
-      console.error("Error sending email:", emailError);
-      res.status(500).json({ error: "Error sending activation email" });
+      res.status(200).json({ message: "User created and stored in Firestore" });
+    } catch (error) {
+      res.status(400).send(error.message);
     }
-  });
+  } catch (error) {
+    res.status(400).send(error.message);
+  }
 };
 
+// Function to login
 const login = async (req, res) => {
   const { email, password } = req.body;
 
@@ -150,16 +142,17 @@ const login = async (req, res) => {
   }
 
   try {
-    // Check if user exists
-    const result = await pool.query("SELECT * FROM users WHERE email = $1 AND login_type = $2", [
-      email,"N"
-    ]);
-    const user = result.rows[0];
+    // Query Firestore for the user with matching email and login_type = "N"
+    const snapshot = await Users.where("email", "==", email)
+      .where("login_type", "==", "N")
+      .get();
 
-    // Check if user is found
-    if (!user) {
+    // If no user found, send invalid credentials response
+    if (snapshot.empty) {
       return res.status(401).json({ message: "Invalid email or password." });
     }
+
+    const user = snapshot.docs[0].data(); // Get the user data
 
     // Check if the account is activated
     if (!user.activated_yn) {
@@ -174,7 +167,7 @@ const login = async (req, res) => {
 
     // Create a token
     const token = jwt.sign(
-      { id: user.id, email: user.email },
+      { email: user.email },
       process.env.JWT_SECRET,
       { expiresIn: "1h" }
     );
@@ -183,7 +176,6 @@ const login = async (req, res) => {
       message: "Login successful",
       token,
       user: {
-        id: user.id,
         email: user.email,
       },
     });
@@ -193,13 +185,20 @@ const login = async (req, res) => {
   }
 };
 
-const reSendActivationLink = (req, res) => {
-  const user = req.body;
+// Function to resend activation link
+const reSendActivationLink = async (req, res) => {
+  const data = req.body;
 
-  const token = jwt.sign({ email: user.email }, process.env.JWT_SECRET, {
+  const token = jwt.sign({ email: data.email }, process.env.JWT_SECRET, {
     expiresIn: "1h",
   });
 
+  const snapshot = await Users.where("email", "==", data.email).get();
+  const user = snapshot.docs.map((doc) => ({
+    id: doc.id,
+    ...doc.data(),
+  }))[0];
+  
   const activationLink = `http://localhost:3000/set-password/${token}`;
 
   const templatePath = path.join(
@@ -210,6 +209,7 @@ const reSendActivationLink = (req, res) => {
   let emailTemplate = fs.readFileSync(templatePath, "utf8");
 
   emailTemplate = emailTemplate.replace("{{activationLink}}", activationLink);
+  emailTemplate = emailTemplate.replace("{{userName}}", user.dentist_full_name);
 
   // Create a transporter for nodemailer
   const transporter = nodemailer.createTransport({
@@ -231,17 +231,22 @@ const reSendActivationLink = (req, res) => {
   };
   try {
     transporter.sendMail(mailOptions);
-    res.status(200).json('An activation email has been sent. Please confirm to complete your setup.');
+    res
+      .status(200)
+      .json(
+        "An activation email has been sent. Please confirm to complete your setup."
+      );
   } catch (emailError) {
     console.error("Error sending mail:", emailError);
     res.status(500).json({ error: "Error sending mail" });
   }
 };
 
+// Function to send activation link
 const activate = async (req, res) => {
   const { token } = req.body;
-  console.log("Received Token:", token); // Log the received token
-
+ 
+  // Validate input
   if (!token) {
     return res.status(400).json({ message: "Token is required." });
   }
@@ -252,29 +257,29 @@ const activate = async (req, res) => {
 
     const userId = decoded.email;
 
-    // Check if the user exists
-    const userResult = await pool.query(
-      "SELECT * FROM users WHERE email = $1",
-      [userId]
-    );
-    const user = userResult.rows[0];
+    // Query Firestore to find the user by email
+    const snapshot = await Users.where("email", "==", userId).get();
 
-    if (!user) {
+    // Check if the user exists
+    if (snapshot.empty) {
       return res.status(404).json({ message: "User not found." });
     }
 
-    if (user.is_active) {
+    const userDoc = snapshot.docs[0]; // Get the first matching document
+    const user = userDoc.data(); // Get the user data
+
+  
+    // Check if the account is already activated
+    if (user.activated_yn===true) {
       return res.status(400).json({ message: "Account is already activated." });
     }
 
-    // Update the user's status to activated
-    await pool.query("UPDATE users SET activated_yn = $1 WHERE email = $2", [
-      true,
-      userId,
-    ]);
+    // Update the user's status to activated in Firestore
+    await userDoc.ref.update({ activated_yn: true });
 
     return res.status(200).json({ message: "Account activated successfully." });
   } catch (error) {
+    // Handle expired or invalid token
     if (error.name === "TokenExpiredError") {
       return res.status(400).json({ message: "Token has expired." });
     }
@@ -283,32 +288,41 @@ const activate = async (req, res) => {
   }
 };
 
+// Function to send otp
 const sendOtp = async (req, res) => {
   const { email } = req.body;
-  try {
-    const userResult = await pool.query(
-      "SELECT * FROM users WHERE email = $1",
-      [email]
-    );
-    const user = userResult.rows[0];
 
-    if (!user) {
+  try {
+    // Query Firestore for the user with matching email
+    const snapshot = await Users.where("email", "==", email).get();
+
+    // Check if the user exists
+    if (snapshot.empty) {
       return res.status(404).json({ message: "User not found." });
     }
+
+    const user = snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }))[0];
 
     // Generate OTP
     const otp = generateOtp();
     const expiry = new Date();
-    expiry.setMinutes(expiry.getMinutes() + 10); // Set expiry time to 5 minutes
+    expiry.setMinutes(expiry.getMinutes() + 10); // Set expiry time to 10 minutes
 
-    // Store OTP and expiry time in the database (create a separate table if needed)
-    await pool.query(
-      "INSERT INTO otp (user_id, otp, expiry) VALUES ($1, $2, $3)",
-      [user.id, otp, expiry]
-    );
-    console.log(otp);
+    // Store OTP and expiry time in Firestore (create a document in the 'otp' collection)
+    await OtpCollection.add({
+      user_id: user.id, // Assuming user.id is available
+      otp: otp,
+      expiry: expiry,
+      email: email, // Store the email for easier lookup
+    });
+
+    console.log(otp); // Log OTP for debugging purposes
+
     // Send OTP email
-    await sendOtpEmail(email, otp,user.dentist_full_name);
+    await sendOtpEmail(email, otp, user.name);
 
     return res.status(200).json({ message: "OTP sent to your email." });
   } catch (error) {
@@ -317,37 +331,49 @@ const sendOtp = async (req, res) => {
   }
 };
 
+// Function to verify otp
 const verifyOtp = async (req, res) => {
   const { email, otp } = req.body;
 
-  try {
-    const userResult = await pool.query(
-      "SELECT * FROM users WHERE email = $1",
-      [email]
-    );
-    const user = userResult.rows[0];
+  if (!email || !otp) {
+    return res.status(400).json({ message: "Email and OTP are required." });
+  }
 
-    if (!user) {
+  try {
+    // Query Firestore to find the user by email
+    const userSnapshot = await Users.where("email", "==", email).get();
+
+    if (userSnapshot.empty) {
       return res.status(404).json({ message: "User not found." });
     }
 
-    const otpResult = await pool.query(
-      "SELECT * FROM otp WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1",
-      [user.id]
-    );
-    const storedOtp = otpResult.rows[0];
+    const userDoc = userSnapshot.docs[0]; // Get the first matching document
 
-    if (!storedOtp) {
+    // Query Firestore to get the latest OTP for the user
+    const otpSnapshot = await OtpCollection.where("email", "==", email)
+      .limit(1)
+      .get();
+
+    if (otpSnapshot.empty) {
       return res.status(400).json({ message: "No OTP sent." });
     }
 
+    const storedOtpDoc = otpSnapshot.docs[0]; // Get the first OTP document
+    const storedOtp = storedOtpDoc.data(); // Get OTP data
+
     const now = new Date();
-    if (storedOtp.otp !== otp || storedOtp.expiry < now) {
-      return res.status(400).json({ message: "Invalid or expired OTP." });
+
+    // Validate the OTP and check if it has expired
+    if (storedOtp.otp !== otp) {
+      return res.status(400).json({ message: "Invalid OTP." });
     }
 
-    // If valid, delete OTP from database (optional)
-    await pool.query("DELETE FROM otp WHERE user_id = $1", [user.id]);
+    if (storedOtp.expiry.toDate() < now) {
+      return res.status(400).json({ message: "OTP has expired." });
+    }
+
+    // If valid, delete the OTP from Firestore (optional)
+    await storedOtpDoc.ref.delete();
 
     return res.status(200).json({ message: "OTP verified successfully." });
   } catch (error) {
@@ -356,29 +382,35 @@ const verifyOtp = async (req, res) => {
   }
 };
 
+// Function to reset password
 const resetPassword = async (req, res) => {
-  // Reset password endpoint
   const { email, newPassword } = req.body;
 
-  try {
-    const userResult = await pool.query(
-      "SELECT * FROM users WHERE email = $1",
-      [email]
-    );
-    const user = userResult.rows[0];
+  // Validate input
+  if (!email || !newPassword) {
+    return res
+      .status(400)
+      .json({ message: "Email and password are required." });
+  }
 
-    if (!user) {
+  try {
+    // Query Firestore to find the user by email
+    const userSnapshot = await Users.where("email", "==", email).get();
+
+    if (userSnapshot.empty) {
       return res.status(404).json({ message: "User not found." });
     }
+
+    const userDoc = userSnapshot.docs[0]; // Get the first matching document
+    const user = userDoc.data(); // Get user data
 
     // Hash the new password before storing it
     const hashedPassword = await bcrypt.hash(newPassword, 10); // Use bcrypt to hash passwords
 
-    // Update the user's password in the database
-    await pool.query("UPDATE users SET password = $1 WHERE id = $2", [
-      hashedPassword,
-      user.id,
-    ]);
+    // Update the user's password in Firestore
+    await userDoc.ref.update({
+      password: hashedPassword,
+    });
 
     return res.status(200).json({ message: "Password reset successfully." });
   } catch (error) {
@@ -387,38 +419,56 @@ const resetPassword = async (req, res) => {
   }
 };
 
+// Function to set password
 const setPassword = async (req, res) => {
-    // Reset password endpoint
-    const { token, password } = req.body;
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+  const { token, password } = req.body;
 
+  // Validate input
+  if (!token || !password) {
+    return res
+      .status(400)
+      .json({ message: "Token and password are required." });
+  }
+
+  try {
+    // Decode the token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const userId = decoded.email;
-    try {
-      const userResult = await pool.query(
-        "SELECT * FROM users WHERE email = $1",
-        [userId]
-      );
-      const user = userResult.rows[0];
-  
-      if (!user) {
-        return res.status(404).json({ message: "User not found." });
-      }
-  
-      // Hash the new password before storing it
-      const hashedPassword = await bcrypt.hash(password, 10); // Use bcrypt to hash passwords
-  
-      // Update the user's password in the database
-      await pool.query("UPDATE users SET password = $1 WHERE id = $2", [
-        hashedPassword,
-        user.id,
-      ]);
-  
-      return res.status(200).json({ message: "Password set successfully." });
-    } catch (error) {
-      console.error(error);
-      return res.status(500).json({ message: "Internal server error." });
+
+    // Query Firestore to find the user by email
+    const userSnapshot = await Users.where("email", "==", userId).get();
+
+    if (userSnapshot.empty) {
+      return res.status(404).json({ message: "User not found." });
     }
-  };
+
+    const userDoc = userSnapshot.docs[0]; // Get the first matching document
+    const user = userDoc.data(); // Get user data
+
+    // Hash the new password before storing it
+    const hashedPassword = await bcrypt.hash(password, 10); // Use bcrypt to hash passwords
+
+    // Update the user's password in Firestore
+    await userDoc.ref.update({
+      password: hashedPassword,
+    });
+
+    return res.status(200).json({ message: "Password set successfully." });
+  } catch (error) {
+    console.error(error);
+
+    if (error.name === "JsonWebTokenError") {
+      return res.status(400).json({ message: "Invalid token." });
+    }
+
+    if (error.name === "TokenExpiredError") {
+      return res.status(400).json({ message: "Token has expired." });
+    }
+
+    return res.status(500).json({ message: "Internal server error." });
+  }
+};
+
 module.exports = {
   creeateUser,
   login,
