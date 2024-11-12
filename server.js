@@ -12,10 +12,94 @@ const User = require("./src/Modal/User");
 const passport = require("passport");
 const cron = require("node-cron");
 const telnyxController = require("./src/Controller/TelnyxController");
-const ConversationsController =require('./src/Controller/ConversationsController')
-const app = express();
-const port = 8080;
+const ConversationsController = require("./src/Controller/ConversationsController");
+const http = require("http");
+const WebSocketServer = require("ws");
+const url = require("url");
 
+// Create WebSocket server and bind it to the same HTTP server
+const wsServer = new WebSocketServer.Server({ port: 8081 });
+wsServer.on("connection", (ws, request) => {
+  console.log("New WebSocket client connected");
+
+  // Send welcome message once the connection is established
+  ws.send(
+    JSON.stringify({ message: "Welcome to WebSocket server on port 8081!" })
+  );
+
+  let fetching = false;
+
+  // Heartbeat: Ping/Pong mechanism to check client connection
+  ws.isAlive = true; // Flag to track if the client is alive
+
+  // Listen for pong responses from the client
+  ws.on("pong", () => {
+    ws.isAlive = true; // Client is alive, reset the isAlive flag
+  });
+
+  // Set an interval to send ping messages every 30 seconds to keep the connection alive
+  const interval = setInterval(() => {
+    if (!ws.isAlive) {
+      console.log("Client disconnected due to inactivity or dropped connection");
+      return ws.terminate(); // Terminate the connection if client is unresponsive
+    }
+    ws.isAlive = false; // Reset isAlive flag for the next check
+    ws.ping(); // Send ping to client
+  }, 30000); // Ping every 30 seconds
+
+  // Handle incoming messages from the client
+  ws.on("message", async (message) => {
+    try {
+      // Parse the incoming message
+      const { type } = JSON.parse(message);
+
+      // If the type is "conversation", process the request
+      if (type === "conversation" && !fetching) {
+        fetching = true; // Prevent multiple concurrent requests
+
+        // Fetch conversations from the controller (you can adjust this method)
+        const conversations = await ConversationsController?.getAllLeadsForConversationWebSocket();
+
+        // Send the response back to the client
+        if (conversations && conversations.length > 0) {
+          ws.send(JSON.stringify({ type: "conversation", conversations }));
+        } else {
+          ws.send(
+            JSON.stringify({
+              type: "conversation",
+              message: "No conversations available.",
+            })
+          );
+        }
+
+        fetching = false; // Reset fetching flag after data is sent
+      } else {
+        // If the message type is unknown, send an error response
+        ws.send(JSON.stringify({ message: "Unknown message type." }));
+      }
+    } catch (error) {
+      console.error("WebSocket error:", error);
+      ws.send(JSON.stringify({ error: "Failed to process message." }));
+      fetching = false; // Reset fetching flag in case of error
+    }
+  });
+
+  // Handle client disconnection
+  ws.on("close", (code, reason) => {
+    console.log(`Client disconnected. Code: ${code}, Reason: ${reason}`);
+    clearInterval(interval); // Clear the heartbeat interval when client disconnects
+  });
+
+  // Handle errors (e.g., if the WebSocket connection drops unexpectedly)
+  ws.on("error", (error) => {
+    console.error("WebSocket error:", error);
+    ws.close();
+  });
+});
+
+
+const port = 8080;
+const app = express();
 app.use(
   cors({
     origin: "http://localhost:3000", // Replace with your frontend URL
@@ -126,38 +210,33 @@ app.get("/", (req, res) => {
   res.send("hello fareed");
 });
 
-
 // Define your routes
 app.use("/api/v1/auth", authRoutes);
 
 //upload csv
 app.post("/upload-csv", upload.single("file"), uploadCsv);
 
-cron.schedule("* * * * *", async () => {
-  // This will run every hour at the 1-minute mark
-  console.log("Fetching cron job webhook_deliveries...");
+// cron.schedule("* * * * *", async () => {
+//   // This will run every hour at the 1-minute mark
+//   console.log("Fetching cron job webhook_deliveries...");
+//   try {
+//     // telnyxController.getWebhook_deliveries();
+//     // ConversationsController.sendMessageScheduler();
+//   } catch (error) {
+//     console.error("Error fetching webhook deliveries:", error);
+//   }
+// });
+
+const connectWithRetry = async () => {
   try {
-    telnyxController.getWebhook_deliveries()
-    ConversationsController.sendMessageScheduler()
+    await sequelize.authenticate();
+    console.log("Database connected successfully");
   } catch (error) {
-    console.error("Error fetching webhook deliveries:", error);
-  }
-});
-
-const testDatabaseConnection = async () => {
-  try {
-    await sequelize.authenticate(); // Test connection
-    console.log("Connection has been established successfully.");
-
-    // Uncomment the following line if you want to sync models during startup
-    await sequelize.sync(); // Only uncomment if you need to sync models
-
-    console.log("Database & tables synced!");
-  } catch (error) {
-    console.error("Unable to connect to the database:", error);
+    console.error("Failed to connect to the database:", error);
+    setTimeout(connectWithRetry, 5000); // Retry connection after 5 seconds
   }
 };
 
-testDatabaseConnection(); 
+connectWithRetry();
 
 app.listen(port, () => console.log(`App listening on port ${port}`));

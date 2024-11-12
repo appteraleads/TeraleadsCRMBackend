@@ -139,6 +139,10 @@ Lead.init(
     call_start_time: {
       type: DataTypes.STRING,
     },
+    conversations_lead:{
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+    }
   },
 
   {

@@ -99,7 +99,9 @@ router.post("/uploadFile/:userId",middleware?.verifyToken, upload.single("file")
 router.post("/sendMessage",middleware?.verifyToken, ConversationsController.sendMessage);
 router.post("/sendEmail",middleware?.verifyToken, ConversationsController.sendEmail);
 router.post("/get-conversationByLeadId",middleware?.verifyToken, ConversationsController.getConversationByLeadId);
-router.post("/get-allLeadsForConversation",middleware?.verifyToken, ConversationsController.getAllLeadsForConversation);
+router.post("/get-allLeadsListForConversation",middleware?.verifyToken, ConversationsController.getAllLeadsListForConversation);
+router.put("/conversations/unseen/:lead_id",middleware?.verifyToken, ConversationsController.handleConversationUnseen);
+router.put("/conversations/LeadTF/:id",middleware?.verifyToken, ConversationsController.handleConversationLead);
 
 // // Telnyx Webhook Route
 router.post("/webhook_getResponseFromTelnyx", telnyxController.webhook_getResponseFromTelnyx);

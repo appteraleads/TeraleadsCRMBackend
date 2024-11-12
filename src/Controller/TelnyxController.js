@@ -11,6 +11,7 @@ const sendMessageFromTelnyxNumber = async (from, to, text) => {
       to,
       text,
     };
+    
     const response = await axios.post(`${telnyxBaseUrl}/messages`, data, {
       headers: {
         Authorization: `Bearer ${process.env.TELNYX_API_KEY}`,
