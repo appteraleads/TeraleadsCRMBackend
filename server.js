@@ -98,7 +98,7 @@ wsServer.on("connection", (ws, request) => {
 });
 
 
-const port = 8080;
+const port = 5000;
 const app = express();
 app.use(
   cors({
@@ -131,7 +131,7 @@ passport.use(
     {
       clientID: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      callbackURL: "http://localhost:8080/api/v1/auth/google/callback",
+      callbackURL: "http://localhost:5000/api/v1/auth/google/callback",
       passReqToCallback: true,
       scope: ["profile", "email", "openid"],
     },

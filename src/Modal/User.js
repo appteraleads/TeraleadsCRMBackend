@@ -26,6 +26,12 @@ User.init(
     clinic_name: {
       type: DataTypes.STRING(255),
     },
+    clinic_id: {
+      type: DataTypes.INTEGER,
+    },
+    iv_encrypted_password: {
+      type: DataTypes.STRING(255),
+    },
     clinic_size: {
       type: DataTypes.STRING(50),
     },
@@ -59,11 +65,17 @@ User.init(
     password: {
       type: DataTypes.STRING(255),
     },
-    roles: {
-      type: DataTypes.TEXT,
-    },
     services_frequently: {
       type: DataTypes.TEXT,
+    },
+    role_id: {
+      type: DataTypes.INTEGER,
+    },
+    avatar_color: {
+      type: DataTypes.STRING(255),
+    },
+    role_name: {
+      type: DataTypes.STRING(255),
     },
     created_on: {
       type: DataTypes.DATE,

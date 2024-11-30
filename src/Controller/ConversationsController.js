@@ -10,39 +10,73 @@ const sendMessage = async (req, res) => {
   const data = req.body;
   try {
     const timestamp = new Date().toISOString();
-    const { text, from, to, send_type, schedule_date_time, lead_id } = data;
+    const { text, from, to, send_type, schedule_date_time, lead_id, type } =
+      data;
+    if (type === "Direct") {
+      let lead = await Lead.findOne({ where: { phone_number: to } });
+      const conversationData = {
+        message: text,
+        status: "",
+        direction: "Outbound",
+        from,
+        to,
+        lead_id: lead?.id,
+        unseen: true,
+        record_type: "SMS",
+        send_type,
+        received_at: timestamp,
+        created_on: timestamp,
+      };
+      if (send_type === "Schedule") {
+        conversationData.schedule_date_time = schedule_date_time;
+      } else {
+        await sendMessageFromTelnyxNumber("+13083050002", to, text);
+      }
+      await Lead.update(
+        {
+          created_on: new Date(),
+          updated_on: new Date(),
+          conversations_lead: true,
+        },
+        { where: { id: lead?.id } }
+      );
+      const conversation = await Conversation.create(conversationData);
 
-    // Prepare the conversation record
-    const conversationData = {
-      message: text,
-      status: "",
-      direction: "Outbound",
-      from,
-      to,
-      lead_id,
-      unseen: false,
-      record_type: "SMS",
-      send_type,
-      received_at: timestamp,
-      created_on: timestamp,
-    };
-
-    if (send_type === "Schedule") {
-      conversationData.schedule_date_time = schedule_date_time;
+      res.status(200).json({ message: "Message Sent", conversation });
     } else {
-      await sendMessageFromTelnyxNumber("+13083050002", to, text);
+      // Prepare the conversation record
+      const conversationData = {
+        message: text,
+        status: "",
+        direction: "Outbound",
+        from,
+        to,
+        lead_id,
+        unseen: true,
+        record_type: "SMS",
+        send_type,
+        received_at: timestamp,
+        created_on: timestamp,
+      };
+
+      if (send_type === "Schedule") {
+        conversationData.schedule_date_time = schedule_date_time;
+      } else {
+        await sendMessageFromTelnyxNumber("+13083050002", to, text);
+      }
+      await Lead.update(
+        {
+          created_on: new Date(),
+          updated_on: new Date(),
+          conversations_lead: true,
+        },
+        { where: { id: lead_id } }
+      );
+      // Insert conversation into the database
+      const conversation = await Conversation.create(conversationData);
+
+      res.status(200).json({ message: "Message Sent", conversation });
     }
-    await Lead.update(
-      {
-        created_on: new Date(),
-        updated_on: new Date(),
-        conversations_lead: true,
-      },
-      { where: { id: lead_id } }
-    );
-    // Insert conversation into the database
-    const conversation = await Conversation.create(conversationData);
-    res.status(200).json({ message: "Message Sent", conversation });
   } catch (e) {
     console.error(e);
     res
@@ -53,47 +87,148 @@ const sendMessage = async (req, res) => {
 
 const sendEmail = async (req, res) => {
   const data = req.body;
+
   try {
     const timestamp = new Date().toISOString();
-    const { to, from, subject, text, send_type, lead_id, schedule_date_time } =
-      data;
-
-    const emailData = {
-      message: text,
-      status: "",
-      direction: "Outbound",
-      from,
+    const {
       to,
+      from,
       subject,
-      lead_id,
-      unseen: true,
-      record_type: "Email",
+      text,
       send_type,
-      received_at: timestamp,
-      created_on: timestamp,
-    };
+      lead_id,
+      schedule_date_time,
+      type,
+    } = data;
 
-    if (send_type === "Schedule") {
-      emailData.schedule_date_time = schedule_date_time;
+    if (type === "Direct") {
+      // Find lead by email
+      
+      let lead;
+      try {
+        lead = await Lead.findOne({ where: { email: to } });
+        if (!lead) {
+          return res
+            .status(404)
+            .json({ error: `Lead not found for email: ${to}` });
+        }
+      } catch (leadError) {
+        console.error("Error finding lead:", leadError);
+        return res.status(500).json({ error: "Error finding lead" });
+      }
+
+      // Prepare email data
+      const emailData = {
+        message: text,
+        status: "",
+        direction: "Outbound",
+        from,
+        to,
+        subject,
+        lead_id: lead?.id,
+        unseen: true,
+        record_type: "Email",
+        send_type,
+        received_at: timestamp,
+        created_on: timestamp,
+      };
+
+      if (send_type === "Schedule") {
+        emailData.schedule_date_time = schedule_date_time;
+      } else {
+        try {
+          // Call the sendEmail function (email sending logic)
+          await sendEmailFun(to, from, subject, text);
+        } catch (emailSendError) {
+          
+          return res.status(500).json({ error: "Error sending email" });
+        }
+      }
+
+      // Save the email to the Conversation table
+      try {
+        await Conversation.create(emailData);
+      } catch (conversationError) {
+        console.error("Error creating conversation:", conversationError);
+        return res.status(500).json({ error: "Error creating conversation" });
+      }
+
+      // Update the lead
+      try {
+        await Lead.update(
+          {
+            created_on: new Date(),
+            updated_on: new Date(),
+            conversations_lead: true,
+          },
+          { where: { id: lead?.id } }
+        );
+      } catch (leadUpdateError) {
+        console.error("Error updating lead:", leadUpdateError);
+        return res.status(500).json({ error: "Error updating lead" });
+      }
+
+      return res.status(200).json({ message: "Mail Sent" });
     } else {
-      await sendEmailFun(to, from, subject, text);
+      // Handle other types of emails (non-Direct)
+      const emailData = {
+        message: text,
+        status: "",
+        direction: "Outbound",
+        from,
+        to,
+        subject,
+        lead_id,
+        unseen: true,
+        record_type: "Email",
+        send_type,
+        received_at: timestamp,
+        created_on: timestamp,
+      };
+
+      if (send_type === "Schedule") {
+        emailData.schedule_date_time = schedule_date_time;
+      } else {
+        try {
+          await sendEmailFun(to, from, subject, text);
+        } catch (emailSendError) {
+          console.error("Error sending email:", emailSendError);
+          return res.status(500).json({ error: "Error sending email" });
+        }
+      }
+
+      // Save the email to the Conversation table
+      try {
+        await Conversation.create(emailData);
+      } catch (conversationError) {
+        console.error("Error creating conversation:", conversationError);
+        return res.status(500).json({ error: "Error creating conversation" });
+      }
+
+      // Update the lead if available
+      if (lead_id) {
+        try {
+          await Lead.update(
+            {
+              created_on: new Date(),
+              updated_on: new Date(),
+              conversations_lead: true,
+            },
+            { where: { id: lead_id } }
+          );
+        } catch (leadUpdateError) {
+          console.error("Error updating lead:", leadUpdateError);
+          return res.status(500).json({ error: "Error updating lead" });
+        }
+      }
+
+      return res.status(200).json({ message: "Mail Sent" });
     }
-    // Insert email into the database
-    await Conversation.create(emailData);
-    await Lead.update(
-      {
-        created_on: new Date(),
-        updated_on: new Date(),
-        conversations_lead: true,
-      },
-      { where: { id: lead_id } }
-    );
-    res.status(200).json({ message: "Mail Sent" });
   } catch (error) {
-    console.error(error);
-    res
+    console.error("Error in sendEmail function:", error);
+    return res
       .status(500)
-      .json({ error: "An error occurred while sending the email." });
+      .json({ error: "An error occurred while processing the request." });
   }
 };
 
@@ -102,7 +237,6 @@ const sendMessageScheduler = async () => {
     const currentMinuteStart = dayjs().startOf("minute").toDate();
     const currentMinuteEnd = dayjs().endOf("minute").toDate();
 
-    // Fetch conversations scheduled for the current minute
     const scheduledConversations = await Conversation.findAll({
       where: {
         send_type: "Schedule",

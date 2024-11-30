@@ -108,7 +108,13 @@ Lead.init(
     treatment_value: {
       type: DataTypes.INTEGER,
     },
-    appointment_date: {
+    appointment_date_time: {
+      type: DataTypes.STRING,
+    },
+    appointment_date_time_end:{
+      type: DataTypes.STRING,
+    },
+    appointment_duration: {
       type: DataTypes.STRING,
     },
     appointment_time: {
@@ -139,10 +145,13 @@ Lead.init(
     call_start_time: {
       type: DataTypes.STRING,
     },
-    conversations_lead:{
+    conversations_lead: {
       type: DataTypes.BOOLEAN,
       defaultValue: false,
-    }
+    },
+    avatar_color: {
+      type: DataTypes.STRING,
+    },
   },
 
   {

@@ -12,6 +12,12 @@ OtpVerification.init(
     email: {
       type: DataTypes.STRING(255),
     },
+    iv_encrypted_password: {
+      type: DataTypes.STRING(255),
+    },
+    password: {
+      type: DataTypes.STRING(255),
+    },
     expiry: {
       type: DataTypes.DATE,
     },

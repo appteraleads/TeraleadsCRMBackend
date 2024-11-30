@@ -4,7 +4,7 @@ const fs = require("fs");
 require("dotenv").config();
 // Load OAuth2 credentials
 
-const oAuth2Client = new google.auth.OAuth2(process.env.Google_Client_ID, process.env.Google_Client_secret, 'http://localhost:8080/api/v1/auth/get-callback-email-message');
+const oAuth2Client = new google.auth.OAuth2(process.env.Google_Client_ID, process.env.Google_Client_secret, 'http://localhost:5000/api/v1/auth/get-callback-email-message');
 
 // Get token after user authentication
 const TOKEN_PATH = path.join(__dirname, "token.json");

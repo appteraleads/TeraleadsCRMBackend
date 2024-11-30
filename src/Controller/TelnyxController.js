@@ -4,6 +4,50 @@ const telnyxBaseUrl = "https://api.telnyx.com/v2";
 const Leads = require("../Modal/Lead");
 const Conversations = require("../Modal/Conversation");
 
+const outboundCallWithTelxyn = async (req, res) => {
+  try {
+    const { toNumber, fromNumber } = req.body;
+    console.log(toNumber, fromNumber);
+    // data: {
+    //   connection_id: process.env.TELNYX_CONNECTION_ID,
+    //   to: toNumber,  // The phone number to call
+    //   from: fromNumber,
+    // }
+    const response = await axios.post(
+      "https://api.telnyx.com/v2/outbound_calls",
+      {
+        data: {
+          to: "+17792003110", //ring central - user
+          from: "+13083050002", // this is for clint = clinic
+          connection_id: "2122061384203110274", // Telnyx connection ID
+        },
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.TELNYX_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    res.json({
+      success: true,
+      call: response.data,
+      message: "Call initiated successfully",
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Failed to initiate the call",
+      error: error.message,
+      error: error,
+    });
+  }
+};
+
+const outboundcallsWebhook = async (req, res) => {
+  console.log(req, res);
+};
+
 const sendMessageFromTelnyxNumber = async (from, to, text) => {
   try {
     const data = {
@@ -11,7 +55,7 @@ const sendMessageFromTelnyxNumber = async (from, to, text) => {
       to,
       text,
     };
-    
+
     const response = await axios.post(`${telnyxBaseUrl}/messages`, data, {
       headers: {
         Authorization: `Bearer ${process.env.TELNYX_API_KEY}`,
@@ -123,7 +167,7 @@ const webhook_getResponseFromTelnyx = async (req, res) => {
         from: fromNumber,
         to: toNumber,
         lead_id: lead.id,
-        unseen: true,
+        unseen: false,
         record_type: "SMS",
         received_at: timestamp,
         created_on: timestamp,
@@ -153,4 +197,6 @@ module.exports = {
   getWebhook_deliveries,
   sendMessageFromTelnyxNumber,
   webhook_getResponseFromTelnyx,
+  outboundCallWithTelxyn,
+  outboundcallsWebhook
 };

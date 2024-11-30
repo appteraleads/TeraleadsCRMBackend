@@ -41,7 +41,7 @@ const sendEmailFun = async (to, from, subject, text) => {
   });
 
   const mailOptions = {
-    from: process.env.SMTP_USER,
+    from: from,
     to: to,
     subject: subject,
     text: text,

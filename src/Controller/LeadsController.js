@@ -9,10 +9,13 @@ const { Op } = require("sequelize");
 const TreatmentOption = require("../Modal/TreatmentOption");
 const Conversations = require("../Modal/Conversation");
 const Lead = require("../Modal/Lead");
+const BlockLeads = require("../Modal/BlockLeads");
+
 const jwt = require("jsonwebtoken");
 const { sendMessageFromTelnyxNumber } = require("./TelnyxController");
 const dayjs = require("dayjs");
 const utc = require("dayjs/plugin/utc");
+const { darkColors } = require("../Common/Color");
 dayjs.extend(utc);
 
 const sendEmail = async (MailTemplate, data, mailtype, clientwebsite) => {
@@ -104,6 +107,7 @@ const createLeads = async (req, res) => {
         },
         attributes: ["price"],
       });
+      const randomNumber = Math.floor(Math.random() * 60);
 
       // Create the lead
       await Lead.create({
@@ -121,6 +125,7 @@ const createLeads = async (req, res) => {
         annual_salary: data?.annual_salary,
         co_signer: data?.co_signer,
         home_owner: data?.home_owner,
+        avatar_color: darkColors[randomNumber],
         created_by: decoded?.email,
         updated_by: decoded?.email,
         // Do not set created_on and updated_on; they will use the default values
@@ -149,12 +154,12 @@ const updateLead = async (req, res) => {
     if (!leadDetails) {
       res.status(404).json({ message: "Lead not found" });
     } else {
-      if (data?.lead_status === "Appointment") {
+      if (data?.lead_status === "Appointment" || data?.appointment_date_time) {
         const token = jwt.sign(
           { id: leadDetails.id, email: leadDetails.email },
           process.env.JWT_SECRET,
           {
-            expiresIn: "10h",
+            expiresIn: "24h",
           }
         );
 
@@ -164,8 +169,14 @@ const updateLead = async (req, res) => {
           );
 
           let tempdata = {
-            appointmentDate: data?.appointment_date,
-            appointmentTime: data?.appointment_time,
+            appointmentDate: dayjs(
+              data?.appointment_date_time,
+              "MMM DD YYYY HH:mm A"
+            ).format("MMM DD YYYY"),
+            appointmentTime: dayjs(
+              data?.appointment_date_time,
+              "MMM DD YYYY HH:mm A"
+            ).format("hh:mm A"),
             treatment: leadDetails?.treatment,
             firstName: leadDetails?.first_name,
             lastName: leadDetails?.last_name,
@@ -191,6 +202,7 @@ To reschedule reply: 2
 Thanks,
 Houston Implant Clinic
 (346) 347-1690`;
+
         await sendMessageFromTelnyxNumber(
           "+13083050002",
           leadDetails?.phone_number,
@@ -215,13 +227,31 @@ Houston Implant Clinic
       } else if (data?.LeadStatus === "AllLeads") {
         data.appointment_status = "Not Confirmed";
       }
+      if (data.appointment_date_time) {
+        data.appointment_date_time = dayjs(data?.appointment_date_time).format(
+          "YYYY-MM-DD HH:mm:ss"
+        );
+        data.appointment_date_time_end = dayjs(data?.appointment_date_time)
+          .add(
+            parseInt(
+              data?.appointment_duration
+                ? data?.appointment_duration
+                : leadDetails?.appointment_duration
+                ? leadDetails?.appointment_duration
+                : 30
+            ),
+            "minute"
+          )
+          .format("YYYY-MM-DD HH:mm:ss");
+      }
       data.updated_by = decoded?.email;
       data.updated_on = timestamp;
+      console.log(data);
       await Lead.update(data, { where: { id } });
       res.status(200).json({ message: "Lead updated successfully!" });
     }
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(400).json({ error: error });
   }
 };
 
@@ -341,11 +371,9 @@ const getAllLeads = async (req, res) => {
       where: { lead_status: "NoShow", ...whereClause },
     });
 
-    const totalRevenue = await Lead.sum('close_amount', {
+    const totalRevenue = await Lead.sum("close_amount", {
       where: { lead_status: "Closed", ...whereClause },
     });
-
-
 
     res.status(200).json({
       leads,
@@ -363,7 +391,7 @@ const getAllLeads = async (req, res) => {
 };
 
 const getAllLeadsKanbanView = async (req, res) => {
-  const { search, searchType = "text" } =req.body;
+  const { search, searchType = "text" } = req.body;
 
   const leadStatus = [
     "AllLeads",
@@ -387,69 +415,67 @@ const getAllLeadsKanbanView = async (req, res) => {
   // Set up a whereClause based on search parameters
   let whereClause = {};
 
-  
-    if (searchType === "text") {
-      whereClause = {
-        [Op.or]: [
-          { user_name: { [Op.iLike]: `%${search}%` } },
-          { treatment: { [Op.iLike]: `%${search}%` } },
-          { phone_number: { [Op.iLike]: `%${search}%` } },
-          { lead_type: { [Op.iLike]: `%${search}%` } },
-          { lead_status: { [Op.iLike]: `%${search}%` } },
-          { last_name: { [Op.iLike]: `%${search}%` } },
-          { first_name: { [Op.iLike]: `%${search}%` } },
-          { email: { [Op.iLike]: `%${search}%` } },
-        ],
-      };
-    } else if (searchType === "datetime") {
-      let startDate, endDate;
+  if (searchType === "text") {
+    whereClause = {
+      [Op.or]: [
+        { user_name: { [Op.iLike]: `%${search}%` } },
+        { treatment: { [Op.iLike]: `%${search}%` } },
+        { phone_number: { [Op.iLike]: `%${search}%` } },
+        { lead_type: { [Op.iLike]: `%${search}%` } },
+        { lead_status: { [Op.iLike]: `%${search}%` } },
+        { last_name: { [Op.iLike]: `%${search}%` } },
+        { first_name: { [Op.iLike]: `%${search}%` } },
+        { email: { [Op.iLike]: `%${search}%` } },
+      ],
+    };
+  } else if (searchType === "datetime") {
+    let startDate, endDate;
 
-      switch (search) {
-        case "today":
-          startDate = dayjs().startOf("day").toDate();
-          endDate = dayjs().endOf("day").toDate();
-          break;
-        case "Last7days":
-          startDate = dayjs().subtract(7, "day").startOf("day").toDate();
-          endDate = dayjs().endOf("day").toDate();
-          break;
-        case "Last14days":
-          startDate = dayjs().subtract(14, "day").startOf("day").toDate();
-          endDate = dayjs().endOf("day").toDate();
-          break;
-        case "Last30days":
-          startDate = dayjs().subtract(30, "day").startOf("day").toDate();
-          endDate = dayjs().endOf("day").toDate();
-          break;
-        case "Last3months":
-          startDate = dayjs().subtract(3, "month").startOf("day").toDate();
-          endDate = dayjs().endOf("day").toDate();
-          break;
-        case "Last6months":
-          startDate = dayjs().subtract(6, "month").startOf("day").toDate();
-          endDate = dayjs().endOf("day").toDate();
-          break;
-        case "Thismonth":
-          startDate = dayjs().startOf("month").toDate();
-          endDate = dayjs().endOf("month").toDate();
-          break;
-        case "Thisyear":
-          startDate = dayjs().startOf("year").toDate();
-          endDate = dayjs().endOf("year").toDate();
-          break;
-        default:
-          break;
-      }
-
-      if (startDate && endDate) {
-        whereClause = {
-          created_on: {
-            [Op.between]: [startDate, endDate],
-          },
-        };
-      }
+    switch (search) {
+      case "today":
+        startDate = dayjs().startOf("day").toDate();
+        endDate = dayjs().endOf("day").toDate();
+        break;
+      case "Last7days":
+        startDate = dayjs().subtract(7, "day").startOf("day").toDate();
+        endDate = dayjs().endOf("day").toDate();
+        break;
+      case "Last14days":
+        startDate = dayjs().subtract(14, "day").startOf("day").toDate();
+        endDate = dayjs().endOf("day").toDate();
+        break;
+      case "Last30days":
+        startDate = dayjs().subtract(30, "day").startOf("day").toDate();
+        endDate = dayjs().endOf("day").toDate();
+        break;
+      case "Last3months":
+        startDate = dayjs().subtract(3, "month").startOf("day").toDate();
+        endDate = dayjs().endOf("day").toDate();
+        break;
+      case "Last6months":
+        startDate = dayjs().subtract(6, "month").startOf("day").toDate();
+        endDate = dayjs().endOf("day").toDate();
+        break;
+      case "Thismonth":
+        startDate = dayjs().startOf("month").toDate();
+        endDate = dayjs().endOf("month").toDate();
+        break;
+      case "Thisyear":
+        startDate = dayjs().startOf("year").toDate();
+        endDate = dayjs().endOf("year").toDate();
+        break;
+      default:
+        break;
     }
 
+    if (startDate && endDate) {
+      whereClause = {
+        created_on: {
+          [Op.between]: [startDate, endDate],
+        },
+      };
+    }
+  }
 
   try {
     // Fetch leads based on the search filter and order by `created_on` in descending order
@@ -466,7 +492,8 @@ const getAllLeadsKanbanView = async (req, res) => {
 
     leads.forEach((lead) => {
       const status = lead.lead_status || "AllLeads";
-      const field = status === "Closed" ? lead.close_amount : lead.treatment_value;
+      const field =
+        status === "Closed" ? lead.close_amount : lead.treatment_value;
 
       // Add lead to the corresponding status category
       if (leadStatus.includes(status)) {
@@ -586,6 +613,7 @@ const deleteLeads = async (req, res) => {
 const confirmAppointment = async (req, res) => {
   const token = req.params?.id;
   const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
   try {
     const lead = await Lead.findByPk(decoded?.id);
     if (!lead) {
@@ -593,14 +621,20 @@ const confirmAppointment = async (req, res) => {
     }
 
     const response = await axios.get(
-      `https://${lead.assign_to}.com/vtigerapi.php`
+      `https://${lead.user_name}.com/vtigerapi.php`
     );
 
     const tempdata = {
       firstName: lead.first_name,
       lastName: lead.last_name,
-      appointmentDate: lead.appointment_date,
-      appointmentTime: lead.appointment_time,
+      appointmentDate: dayjs(
+        lead?.appointment_date_time,
+        "MMM DD YYYY HH:mm A"
+      ).format("MMM DD YYYY"),
+      appointmentTime: dayjs(
+        lead?.appointment_date_time,
+        "MMM DD YYYY HH:mm A"
+      ).format("hh:mm A"),
       treatment: lead.treatment,
       clinicphone: response.data.website?.phone || "",
       clinicaddress: response.data.website?.address || "",
@@ -618,7 +652,7 @@ const confirmAppointment = async (req, res) => {
     await lead.update({
       lead_status: "Appointment",
       appointment_status: "Confirmed",
-    }); 
+    });
     res.redirect(`https://${lead.user_name}.com/confirmation`);
   } catch (error) {
     console.error(error);
@@ -725,7 +759,7 @@ const exportLeads = async (req, res) => {
       AppointmentStatus: lead.appointment_status || "",
       HowToContact: lead.how_to_contact || "",
       TreatmentValue: lead.treatment_value || "",
-      AppointmentDate: lead.appointment_date || "",
+      AppointmentDate: lead.appointment_date_time || "",
       AppointmentTime: lead.appointment_time || "",
       AppointmentNotes: lead.appointment_notes || "",
       ContactedAttempts: lead.contacted_attempts || "",
@@ -786,7 +820,7 @@ const handleResendAppointmentMail = async (req, res) => {
           { id: leadDetails.id, email: leadDetails.email },
           process.env.JWT_SECRET,
           {
-            expiresIn: "10h",
+            expiresIn: "24h",
           }
         );
 
@@ -796,8 +830,14 @@ const handleResendAppointmentMail = async (req, res) => {
           );
 
           let tempdata = {
-            appointmentDate: leadDetails?.appointment_date,
-            appointmentTime: leadDetails?.appointment_time,
+            appointmentDate: dayjs(
+              leadDetails?.appointment_date_time,
+              "MMM DD YYYY HH:mm A"
+            ).format("MMM DD YYYY"),
+            appointmentTime: dayjs(
+              leadDetails?.appointment_date_time,
+              "MMM DD YYYY HH:mm A"
+            ).format("hh:mm A"),
             treatment: leadDetails?.treatment,
             firstName: leadDetails?.first_name,
             lastName: leadDetails?.last_name,
@@ -855,6 +895,7 @@ const formLeadWebhook = async (req, res) => {
       attributes: ["price"],
     });
 
+    const randomNumber = Math.floor(Math.random() * 60);
     await Lead.create({
       first_name,
       last_name,
@@ -875,6 +916,7 @@ const formLeadWebhook = async (req, res) => {
       utm_campaign,
       utm_medium,
       utm_source,
+      avatar_color: darkColors[randomNumber],
       lead_type: "Form_lead",
       lead_status: "AllLeads",
       treatment_value: treatmentOption?.price,
@@ -896,6 +938,260 @@ const formLeadWebhook = async (req, res) => {
   }
 };
 
+const createBlockLead = async (req, res) => {
+  try {
+    // Extract and verify the token
+    const token = req.headers["authorization"]?.split(" ")[1]; // Bearer token
+    if (!token) {
+      return res
+        .status(401)
+        .json({ error: "Access token is missing or invalid." });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const created_by = decoded?.email;
+    const updated_by = decoded?.email;
+
+    const { block_ip_address, block_type, block_phone_number } = req.body;
+
+    // Validate block type and corresponding fields
+    if (!["Number", "IP", "both"].includes(block_type)) {
+      return res.status(400).json({
+        error: "Invalid block_type. Must be one of: 'Number', 'IP', or 'both'.",
+      });
+    }
+
+    // Build the query dynamically based on the block_type
+    const query = {};
+    if (block_type === "Number" || block_type === "both") {
+      if (!block_phone_number) {
+        return res
+          .status(400)
+          .json({ error: "block_phone_number is required." });
+      }
+      query.phone_number = block_phone_number;
+    }
+    if (block_type === "IP" || block_type === "both") {
+      if (!block_ip_address) {
+        return res.status(400).json({ error: "block_IP_address is required." });
+      }
+      query.ip_address = block_ip_address;
+    }
+
+    // Find the lead based on the constructed query
+    const lead = await Lead.findOne({ where: query });
+
+    if (!lead) {
+      return res.status(404).json({
+        error: `No lead found with the provided ${
+          block_type === "both"
+            ? "IP address and phone number"
+            : block_type === "IP"
+            ? "IP address"
+            : "phone number"
+        }.`,
+      });
+    }
+
+    // Create the block lead record
+    await BlockLeads.create({
+      ...req.body,
+      lead_id: lead.id,
+      created_by,
+      updated_by,
+    });
+
+    res.status(200).json({
+      message: "Block lead created successfully",
+    });
+  } catch (error) {
+    // Handle errors
+    if (error.name === "SequelizeValidationError") {
+      return res.status(400).json({
+        error: "Validation error",
+        details: error.errors.map((e) => e.message),
+      });
+    }
+
+    if (error.name === "SequelizeDatabaseError") {
+      return res.status(400).json({
+        error: "Database error",
+        details: error.message,
+      });
+    }
+
+    if (error.name === "JsonWebTokenError") {
+      return res.status(401).json({
+        error: "Invalid token. Please provide a valid access token.",
+      });
+    }
+
+    if (error.name === "TokenExpiredError") {
+      return res.status(401).json({
+        error: "Access token has expired. Please log in again.",
+      });
+    }
+
+    console.error("Error in createBlockLead:", error);
+    res.status(500).json({
+      error: "Internal server error",
+      details: "An unexpected error occurred. Please try again later.",
+    });
+  }
+};
+
+const getAllBlockLeads = async (req, res) => {
+  try {
+    const { clinic_id } = req.params;
+
+    if (!clinic_id) {
+      return res.status(400).json({
+        error: "clinic_id is required to fetch block leads.",
+      });
+    }
+
+    const blockLeads = await BlockLeads.findAll({
+      where: {
+        clinic_id,
+      },
+    });
+
+    res.status(200).json(blockLeads);
+  } catch (error) {
+    console.error("Error fetching block leads:", error);
+    res.status(500).json({
+      error: "Internal server error",
+      details: error.message,
+    });
+  }
+};
+
+const updateBlockLead = async (req, res) => {
+  try {
+    // Extract and verify the token
+    const token = req.headers["authorization"]?.split(" ")[1]; // Bearer token
+    if (!token) {
+      return res
+        .status(401)
+        .json({ error: "Access token is missing or invalid." });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const updated_by = decoded?.email;
+
+    const { block_ip_address, block_type, block_phone_number, block_id } = req.body;
+
+    // Validate block type and corresponding fields
+    if (!["Number", "IP", "both"].includes(block_type)) {
+      return res.status(400).json({
+        error: "Invalid block_type. Must be one of: 'Number', 'IP', or 'both'.",
+      });
+    }
+
+    // Validate block_id (the record to update must be provided)
+    if (!block_id) {
+      return res.status(400).json({ error: "block_id is required." });
+    }
+
+    // Build the query dynamically based on the block_type
+    const query = {};
+    if (block_type === "Number" || block_type === "both") {
+      if (!block_phone_number) {
+        return res
+          .status(400)
+          .json({ error: "block_phone_number is required." });
+      }
+      query.phone_number = block_phone_number;
+    }
+    if (block_type === "IP" || block_type === "both") {
+      if (!block_ip_address) {
+        return res.status(400).json({ error: "block_ip_address is required." });
+      }
+      query.ip_address = block_ip_address;
+    }
+
+    // Find the lead based on the constructed query
+    const lead = await Lead.findOne({ where: query });
+
+    if (!lead) {
+      return res.status(404).json({
+        error: `No lead found with the provided ${
+          block_type === "both"
+            ? "IP address and phone number"
+            : block_type === "IP"
+            ? "IP address"
+            : "phone number"
+        }.`,
+      });
+    }
+
+    // Find the existing BlockLeads record to update
+    const blockLead = await BlockLeads.findOne({ where: { id: block_id } });
+
+    if (!blockLead) {
+      return res.status(404).json({ error: "Block lead not found." });
+    }
+
+    // Update the block lead record
+    await blockLead.update({
+      ...req.body,
+      updated_by,
+    });
+
+    res.status(200).json({
+      message: "Block lead updated successfully",
+    });
+  } catch (error) {
+    // Handle errors
+    if (error.name === "SequelizeValidationError") {
+      return res.status(400).json({
+        error: "Validation error",
+        details: error.errors.map((e) => e.message),
+      });
+    }
+
+    if (error.name === "SequelizeDatabaseError") {
+      return res.status(400).json({
+        error: "Database error",
+        details: error.message,
+      });
+    }
+
+    if (error.name === "JsonWebTokenError") {
+      return res.status(401).json({
+        error: "Invalid token. Please provide a valid access token.",
+      });
+    }
+
+    if (error.name === "TokenExpiredError") {
+      return res.status(401).json({
+        error: "Access token has expired. Please log in again.",
+      });
+    }
+
+    console.error("Error in updateBlockLead:", error);
+    res.status(500).json({
+      error: "Internal server error",
+      details: "An unexpected error occurred. Please try again later.",
+    });
+  }
+};
+
+
+
+const deleteBlockLeadById = async (req, res) => {
+  try {
+    const blockLead = await BlockLeads.findByPk(req.params.id);
+    if (!blockLead) {
+      return res.status(404).json({ error: "Block lead not found" });
+    }
+    await blockLead.destroy();
+    res.status(204).send();
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
 module.exports = {
   createLeads,
   updateLead,
@@ -911,4 +1207,9 @@ module.exports = {
   duplicateLeads,
   confirmAppointmentWebhookTelnyx,
   handleResendAppointmentMail,
+  sendEmail,
+  createBlockLead,
+  getAllBlockLeads,
+  updateBlockLead,
+  deleteBlockLeadById,
 };

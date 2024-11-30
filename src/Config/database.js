@@ -16,7 +16,12 @@ const sequelize = new Sequelize('teracrm', 'postgres', 'Teraleads123!', {
 
 // Test the connection
 sequelize.authenticate()
-    .then(() => {
+    .then(async() => {
+        const currentDatabaseTime = await sequelize.query("SELECT NOW() AS current_time", {
+            type: Sequelize.QueryTypes.SELECT,
+          });
+          
+        console.log("Current database time:", currentDatabaseTime[0].current_time);
         console.log('Connection has been established successfully.');
     })
     .catch(err => {
