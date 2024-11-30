@@ -100,9 +100,26 @@ wsServer.on("connection", (ws, request) => {
 
 const port = 5000;
 const app = express();
+
+const allowedOrigins = [
+  "http://localhost:3000", 
+  "http://161.35.55.97:3000",
+
+];
+
 app.use(
   cors({
-    origin: "http://localhost:8080", // Replace with your frontend URL
+    origin: (origin, callback) => {
+      // Allow requests with no origin (e.g., mobile apps, curl requests)
+      if (!origin) return callback(null, true);
+
+      // Check if the incoming origin is in the allowed list
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      } else {
+        return callback(new Error("Not allowed by CORS"));
+      }
+    },
     credentials: true, // Allow cookies and authorization headers
   })
 );
