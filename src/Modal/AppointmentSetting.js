@@ -1,5 +1,5 @@
 const { DataTypes } = require('sequelize');
-const sequelize = require('../config/database'); // Adjust this to your actual database config
+const sequelize = require('../Config/database'); // Adjust this to your actual database config
 
 const AppointmentSetting = sequelize.define('AppointmentSetting', {
     id: {
