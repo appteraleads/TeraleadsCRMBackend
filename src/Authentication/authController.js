@@ -85,7 +85,7 @@ const sendOtpEmail = async (email, otp, userName) => {
 
   const mailOptions = {
     from: process.env.SMTP_USER,
-    to: "app@teraleads.com",
+    to: email,
     subject: "Your OTP to Reset Your Password for TeraleadsCRM",
     html: emailTemplate,
   };
@@ -171,7 +171,7 @@ const createUser = async (req, res) => {
 
     const mailOptions = {
       from: process.env.SMTP_USER,
-      to: "app@teraleads.com",
+      to: user?.email,
       subject: "Activate Your Account",
       html: emailTemplate,
     };
@@ -308,7 +308,7 @@ const reSendActivationLink = async (req, res) => {
 
   const mailOptions = {
     from: process.env.SMTP_USER,
-    to: "app@teraleads.com",
+    to: email,
     subject: "Activate Your Account",
     html: emailTemplate,
   };
@@ -546,7 +546,7 @@ const inviteTeamMember = async (req, res) => {
 
     const mailOptions = {
       from: process.env.SMTP_USER,
-      to: "app@teraleads.com",
+      to: user?.email,
       subject: `Invited to Join ${user.clinic_name}.`,
       html: emailTemplate,
     };
