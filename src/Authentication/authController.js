@@ -183,6 +183,7 @@ const createUser = async (req, res) => {
   }
 };
 
+// Function to update a normal user
 const updateUser = async (req, res) => {
   const data = req.body;
   const token = req.headers.authorization?.split(" ")[1];
@@ -221,12 +222,12 @@ const login = async (req, res) => {
   }
 
   try {
-    const user = await User.findOne({ where: { email, login_type: "N" } });
+    const user = await User.findOne({ where: { email } });
     if (!user) {
       return res.status(401).json({ message: "Invalid email or password." });
     }
 
-    if (!user.activated_yn) {
+    if (!user.activated_yn && user.login_type === "N") {
       return res.status(403).json({ message: "Please activate your account." });
     }
 
@@ -248,6 +249,14 @@ const login = async (req, res) => {
       }
     );
 
+    const refreshToken = jwt.sign(
+      { email: user.email, id: user.id },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: "12h",
+      }
+    );
+
     return res.status(200).json({
       message: "Login successful",
       token,
@@ -255,6 +264,7 @@ const login = async (req, res) => {
         email: user.email,
         id: user.id,
         userColumn: user.userColumn,
+        refreshToken,
       },
     });
   } catch (error) {
@@ -409,12 +419,17 @@ const resetPassword = async (req, res) => {
   }
 
   try {
-    const { encryptedPassword, iv } = encryptPassword(password);
+    const { encryptedPassword, iv } = encryptPassword(newPassword);
     await User.update(
-      { password: encryptedPassword },
-      { iv_encrypted_password: iv },
-      { where: { email: userEmail } }
+      {
+        password: encryptedPassword,
+        iv_encrypted_password: iv,
+      },
+      {
+        where: { email: user?.email },
+      }
     );
+
     await Otp.destroy({ where: { email: email } }); // Remove OTP after setting password
     return res.status(200).json({ message: "Password updated successfully." });
   } catch (error) {
@@ -731,7 +746,6 @@ const getAllRoles = async (req, res) => {
         {
           model: User,
           attributes: [], // No user details needed here
-        
         },
       ],
       group: ["Role.id"], // Group by Role.id to get accurate user count
