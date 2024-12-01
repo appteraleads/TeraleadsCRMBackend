@@ -43,7 +43,7 @@ router.get(
     async (req, res) => {
       try {
         const token = jwt.sign({ id: req.user.id, email: req.user.email }, JWT_SECRET, { expiresIn: '6h' });
-        res.redirect(`http://localhost:3000/login?token=${token}`);
+        res.redirect(`${process.env.REACT_APP__BASE_URL}/login?token=${token}`);
       } catch (error) {
         console.error("Error during Google callback:", error);
         res.status(500).send("Internal Server Error");

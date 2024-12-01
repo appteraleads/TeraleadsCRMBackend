@@ -81,7 +81,7 @@ const sendOtpEmail = async (email, otp, userName) => {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
     },
-  });
+  }); 
 
   const mailOptions = {
     from: process.env.SMTP_USER,
@@ -102,7 +102,7 @@ const createUser = async (req, res) => {
       expiresIn: "24h",
     });
 
-    const activationLink = `http://localhost:3000/set-password/${token}`;
+    const activationLink = `${process.env.REACT_APP__BASE_URL}/set-password/${token}`;
     const activationLinkExpire = new Date(Date.now() + 5 * 60000);
 
     const existingUser = await User.findOne({ where: { email: user.email } });
@@ -285,7 +285,7 @@ const reSendActivationLink = async (req, res) => {
     return res.status(404).json({ message: "User not found." });
   }
 
-  const activationLink = `http://localhost:3000/set-password/${token}`;
+  const activationLink = `${process.env.REACT_APP__BASE_URL}/set-password/${token}`;
 
   const templatePath = path.join(
     __dirname,
@@ -486,7 +486,7 @@ const inviteTeamMember = async (req, res) => {
       expiresIn: "24h",
     });
 
-    const activationLink = `http://localhost:3000/set-password/${token}`;
+    const activationLink = `${process.env.REACT_APP__BASE_URL}/set-password/${token}`;
     const activationLinkExpire = new Date(Date.now() + 5 * 60000);
 
     const existingUser = await User.findOne({ where: { email: user.email } });
