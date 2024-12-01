@@ -54,7 +54,7 @@ User.init(
       defaultValue: "N",
     },
     patients_average_per_week: {
-      type: DataTypes.INTEGER,
+      type: DataTypes.STRING(255),
     },
     phone: {
       type: DataTypes.STRING(15),

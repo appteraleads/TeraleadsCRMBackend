@@ -131,7 +131,7 @@ const createUser = async (req, res) => {
       clinic_website: user?.clinic_website || "",
       phone: user?.phone || undefined,
       clinic_size: user?.clinic_size || "",
-      patients_average_per_week: user?.patients_average_per_week || 0,
+      patients_average_per_week: user?.patients_average_per_week || '0',
       services_frequently: user?.services_frequently || "",
       in_house_arch_lab_yn: user?.in_house_arch_lab_yn || false,
       arch_digital_workflow_yn: user?.arch_digital_workflow_yn || false,
