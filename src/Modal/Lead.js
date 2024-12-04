@@ -10,6 +10,9 @@ Lead.init(
       autoIncrement: true,
       primaryKey: true,
     },
+    clinic_id: {
+      type: DataTypes.INTEGER,
+    },
     assign_to: {
       type: DataTypes.STRING(100),
     },
@@ -111,7 +114,7 @@ Lead.init(
     appointment_date_time: {
       type: DataTypes.STRING,
     },
-    appointment_date_time_end:{
+    appointment_date_time_end: {
       type: DataTypes.STRING,
     },
     appointment_duration: {

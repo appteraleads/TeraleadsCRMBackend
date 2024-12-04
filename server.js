@@ -16,6 +16,7 @@ const ConversationsController = require("./src/Controller/ConversationsControlle
 const http = require("http");
 const WebSocketServer = require("ws");
 const url = require("url");
+const { sendNotificationUpcomingAppointmentReminder } = require("./src/Controller/AppointmentsController");
 
 // Create WebSocket server and bind it to the same HTTP server
 const wsServer = new WebSocketServer.Server({ port: 8081 });
@@ -232,16 +233,17 @@ app.use("/api/v1/auth", authRoutes);
 //upload csv
 app.post("/upload-csv", upload.single("file"), uploadCsv);
 
-// cron.schedule("* * * * *", async () => {
-//   // This will run every hour at the 1-minute mark
-//   console.log("Fetching cron job webhook_deliveries...");
-//   try {
-//     // telnyxController.getWebhook_deliveries();
-//     // ConversationsController.sendMessageScheduler();
-//   } catch (error) {
-//     console.error("Error fetching webhook deliveries:", error);
-//   }
-// });
+cron.schedule("* * * * *", async () => {
+  // This will run every hour at the 1-minute mark
+  console.log("Fetching cron job webhook_deliveries...");
+  try {
+    sendNotificationUpcomingAppointmentReminder()
+    // telnyxController.getWebhook_deliveries();
+    // ConversationsController.sendMessageScheduler();
+  } catch (error) {
+    console.error("Error fetching webhook deliveries:", error);
+  }
+});
 
 const connectWithRetry = async () => {
   try {

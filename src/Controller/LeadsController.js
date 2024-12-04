@@ -10,12 +10,23 @@ const TreatmentOption = require("../Modal/TreatmentOption");
 const Conversations = require("../Modal/Conversation");
 const Lead = require("../Modal/Lead");
 const BlockLeads = require("../Modal/BlockLeads");
-
+const Notification = require("../Modal/Notification");
+const Clinic = require("../Modal/Clinic");
+const User = require("../Modal/User");
+const NotificationSetting = require("../Modal/NotificationSetting");
 const jwt = require("jsonwebtoken");
 const { sendMessageFromTelnyxNumber } = require("./TelnyxController");
 const dayjs = require("dayjs");
 const utc = require("dayjs/plugin/utc");
 const { darkColors } = require("../Common/Color");
+
+const {
+  NotificationsNewLead,
+  NotificationsAppointmentIsBooked,
+  NotificationsAppointmentConfirmed,
+  NotificationsLeadRescheduleRequest,
+  NotificationsAppointmentStatus,
+} = require("../Common/NotificationTypeFormatehtml");
 dayjs.extend(utc);
 
 const sendEmail = async (MailTemplate, data, mailtype, clientwebsite) => {
@@ -80,9 +91,10 @@ const sendEmail = async (MailTemplate, data, mailtype, clientwebsite) => {
       pass: process.env.SMTP_PASS,
     },
   });
+
   const mailOptions = {
     from: process.env.SMTP_USER,
-    to: "app@teraleads.com",
+    to: data?.email,
     subject: data?.subject,
     html: emailTemplate,
   };
@@ -154,9 +166,54 @@ const updateLead = async (req, res) => {
     if (!leadDetails) {
       res.status(404).json({ message: "Lead not found" });
     } else {
-      if (data?.lead_status === "Appointment" || data?.appointment_date_time) {
+      if (
+        data?.lead_status === "Appointment" &&
+        data?.appointment_status === "Cancelled"
+      ) {
+        const notificationSettingDetails = await NotificationSetting.findOne({
+          where: {
+            clinic_id: leadDetails?.clinic_id,
+            user_id: decoded?.id,
+          },
+        });
+
+        const message_html = NotificationsAppointmentStatus(
+          leadDetails?.first_name + " " + leadDetails?.last_name,
+          dayjs(data?.appointment_date_time, "MMM DD YYYY HH:mm A").format(
+            "MMM DD YYYY"
+          ) +
+            " " +
+            dayjs(data?.appointment_date_time, "MMM DD YYYY HH:mm A").format(
+              "hh:mm A"
+            ),
+          data?.appointment_status
+        );
+
+        if (
+          notificationSettingDetails?.receive_inapp_notification &&
+          notificationSettingDetails?.notify_appointment_rescheduled_canceled
+        ) {
+          await Notification.create({
+            clinic_id: leadDetails.clinic_id,
+            user_id: parseInt(decoded.id),
+            website_name: leadDetails.website_name,
+            lead_id: leadDetails.id,
+            type: "Appointments",
+            message: message_html,
+            metadata: leadDetails,
+            status: "unread",
+          });
+        }
+      } else if (
+        data?.lead_status === "Appointment" ||
+        data?.appointment_date_time
+      ) {
         const token = jwt.sign(
-          { id: leadDetails.id, email: leadDetails.email },
+          {
+            id: decoded?.id,
+            lead_id: leadDetails.id,
+            email: leadDetails.email,
+          },
           process.env.JWT_SECRET,
           {
             expiresIn: "24h",
@@ -167,7 +224,7 @@ const updateLead = async (req, res) => {
           const response = await axios.get(
             `https://${leadDetails?.user_name}.com/vtigerapi.php`
           );
-
+         
           let tempdata = {
             appointmentDate: dayjs(
               data?.appointment_date_time,
@@ -184,15 +241,18 @@ const updateLead = async (req, res) => {
             urlRescheduleAppointment: `${process.env.BASE_URL}/api/v1/auth/rescheduleAppointment/${token}`,
             clinicname: leadDetails?.assign_to,
             subject: "Appointment Confirmation",
+            email:leadDetails?.email
           };
+        
           await sendEmail(
             "confirmation-email.html",
             tempdata,
             "AppointmentConfirmation",
             response?.data
           );
+         
         }
-
+      
         const messageText = `Hey ${leadDetails?.first_name || ""} ${
           leadDetails?.last_name || ""
         },
@@ -224,6 +284,40 @@ Houston Implant Clinic
 
         await Conversations.create(conversationData);
         data.appointment_status = "Not Confirmed";
+
+        const notificationSettingDetails = await NotificationSetting.findOne({
+          where: {
+            clinic_id: leadDetails?.clinic_id,
+            user_id: decoded?.id,
+          },
+        });
+
+        const message_html = NotificationsAppointmentIsBooked(
+          leadDetails?.first_name + " " + leadDetails?.last_name,
+          dayjs(data?.appointment_date_time, "MMM DD YYYY HH:mm A").format(
+            "MMM DD YYYY"
+          ) +
+            " " +
+            dayjs(data?.appointment_date_time, "MMM DD YYYY HH:mm A").format(
+              "hh:mm A"
+            )
+        );
+
+        if (
+          notificationSettingDetails?.receive_inapp_notification &&
+          notificationSettingDetails?.notify_confirmed_appointment
+        ) {
+          await Notification.create({
+            clinic_id: leadDetails.clinic_id,
+            user_id: parseInt(decoded.id),
+            website_name: leadDetails.website_name,
+            lead_id: leadDetails.id,
+            type: "Appointments",
+            message: message_html,
+            metadata: leadDetails,
+            status: "unread",
+          });
+        }
       } else if (data?.LeadStatus === "AllLeads") {
         data.appointment_status = "Not Confirmed";
       }
@@ -244,9 +338,9 @@ Houston Implant Clinic
           )
           .format("YYYY-MM-DD HH:mm:ss");
       }
+
       data.updated_by = decoded?.email;
       data.updated_on = timestamp;
-      console.log(data);
       await Lead.update(data, { where: { id } });
       res.status(200).json({ message: "Lead updated successfully!" });
     }
@@ -615,7 +709,7 @@ const confirmAppointment = async (req, res) => {
   const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
   try {
-    const lead = await Lead.findByPk(decoded?.id);
+    const lead = await Lead.findByPk(decoded?.lead_id);
     if (!lead) {
       return res.status(404).json({ message: "Lead not found." });
     }
@@ -649,6 +743,36 @@ const confirmAppointment = async (req, res) => {
         response.data
       );
     }
+
+    console.log(lead?.clinic_id, decoded.id);
+    const notificationSettingDetails = await NotificationSetting.findOne({
+      where: { clinic_id: lead?.clinic_id, user_id: decoded.id },
+    });
+
+    const message_html = NotificationsAppointmentConfirmed(
+      lead?.first_name + " " + lead?.last_name,
+      lead?.appointment_date_time
+    );
+    if (
+      notificationSettingDetails?.receive_inapp_notification &&
+      notificationSettingDetails?.notify_confirmed_appointment
+    ) {
+      await Notification.create({
+        clinic_id: lead.clinic_id,
+        user_id: decoded.id,
+        website_name: lead.website_name,
+        lead_id: lead.id,
+        type: "Appointments",
+        message: message_html,
+        metadata: lead,
+        status: "unread",
+      });
+    }
+    console.log(
+      "yes",
+      notificationSettingDetails?.receive_inapp_notification,
+      notificationSettingDetails?.notify_confirmed_appointment
+    );
     await lead.update({
       lead_status: "Appointment",
       appointment_status: "Confirmed",
@@ -665,9 +789,33 @@ const rescheduleAppointment = async (req, res) => {
   const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
   try {
-    const lead = await Lead.findByPk(decoded?.id);
+    const lead = await Lead.findByPk(decoded?.lead_id);
     if (!lead) {
       return res.status(404).json({ message: "Lead not found." });
+    }
+
+    const notificationSettingDetails = await NotificationSetting.findOne({
+      where: { clinic_id: lead?.clinic_id, user_id: decoded.id },
+    });
+
+    const message_html = NotificationsLeadRescheduleRequest(
+      lead?.first_name + " " + lead?.last_name,
+      lead?.appointment_date_time
+    );
+    if (
+      notificationSettingDetails?.receive_inapp_notification &&
+      notificationSettingDetails?.notify_lead_reschedule
+    ) {
+      await Notification.create({
+        clinic_id: lead.id,
+        user_id: decoded.id,
+        website_name: lead?.website_name,
+        lead_id: lead.id,
+        type: "Appointments",
+        message: message_html,
+        metadata: lead,
+        status: "unread",
+      });
     }
 
     await lead.update({
@@ -865,6 +1013,7 @@ const handleResendAppointmentMail = async (req, res) => {
 
 const formLeadWebhook = async (req, res) => {
   try {
+    // Destructure request body for ease of use
     const {
       first_name,
       last_name,
@@ -876,6 +1025,7 @@ const formLeadWebhook = async (req, res) => {
       email_verify,
       phone_verify,
       unique_id,
+      treatment_value,
       how_to_contact,
       ip_address,
       assign_to,
@@ -885,18 +1035,48 @@ const formLeadWebhook = async (req, res) => {
       utm_campaign,
       utm_medium,
       utm_source,
+      co_signer,
+      annual_salary,
+      home_owner,
     } = req.body;
 
-    const treatmentOption = await TreatmentOption.findOne({
-      where: {
-        treatment_option: treatment,
-        url: user_name,
-      },
-      attributes: ["price"],
-    });
+    // Validate required fields early on
+    const requiredFields = [
+      "first_name",
+      "last_name",
+      "phone_number",
+      "email",
+      "user_name",
+    ];
+    const missingFields = requiredFields.filter((field) => !req.body[field]);
 
+    if (missingFields.length > 0) {
+      return res.status(400).json({
+        message: "Missing required fields",
+        requiredFields: missingFields,
+      });
+    }
+
+    // Generate a random color index
     const randomNumber = Math.floor(Math.random() * 60);
-    await Lead.create({
+
+    // Retrieve clinic and user details
+    const [clinicDetails, userDetails] = await Promise.all([
+      Clinic.findOne({ where: { clinic_name: user_name } }),
+      User.findOne({ where: { clinic_name: user_name } }),
+    ]);
+    const notificationSettingDetails = await NotificationSetting.findOne({
+      where: { clinic_id: clinicDetails?.id, user_id: userDetails?.id },
+    });
+    // Validate if clinic and user are found
+    if (!clinicDetails || !userDetails) {
+      return res.status(404).json({
+        message: "Clinic or user not found",
+      });
+    }
+
+    // Attempt to create a new lead
+    const LeadInfo = await Lead.create({
       first_name,
       last_name,
       phone_number,
@@ -919,20 +1099,57 @@ const formLeadWebhook = async (req, res) => {
       avatar_color: darkColors[randomNumber],
       lead_type: "Form_lead",
       lead_status: "AllLeads",
-      treatment_value: treatmentOption?.price,
+      treatment_value,
+      co_signer,
+      annual_salary,
+      home_owner,
+      clinic_id: clinicDetails.id,
       created_by: user_name,
       updated_by: user_name,
       created_on: new Date(),
       updated_on: new Date(),
     });
 
+    // Notification creation
+    const message_html = NotificationsNewLead(first_name + " " + last_name);
+    if (notificationSettingDetails?.notify_newlead_added) {
+      await Notification.create({
+        clinic_id: clinicDetails.id,
+        user_id: userDetails.id,
+        website_name,
+        lead_id: LeadInfo.id,
+        type: "Leads",
+        message: message_html,
+        metadata: LeadInfo,
+        status: "unread",
+      });
+    }
+
+    // Respond with success
     res.status(201).json({
       message: "Lead stored successfully",
     });
   } catch (error) {
     console.error("Error storing lead:", error);
+
+    // Handle different types of errors
+    if (error.name === "SequelizeValidationError") {
+      return res.status(400).json({
+        message: "Validation error",
+        errors: error.errors.map((err) => err.message),
+      });
+    }
+
+    if (error.name === "SequelizeUniqueConstraintError") {
+      return res.status(409).json({
+        message: "Duplicate entry detected",
+        error: error.message,
+      });
+    }
+
+    // Generic server error response
     res.status(500).json({
-      message: "Failed to store lead",
+      message: "Failed to store lead due to a server error",
       error: error.message,
     });
   }
@@ -1079,7 +1296,8 @@ const updateBlockLead = async (req, res) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const updated_by = decoded?.email;
 
-    const { block_ip_address, block_type, block_phone_number, block_id } = req.body;
+    const { block_ip_address, block_type, block_phone_number, block_id } =
+      req.body;
 
     // Validate block type and corresponding fields
     if (!["Number", "IP", "both"].includes(block_type)) {
@@ -1177,8 +1395,6 @@ const updateBlockLead = async (req, res) => {
   }
 };
 
-
-
 const deleteBlockLeadById = async (req, res) => {
   try {
     const blockLead = await BlockLeads.findByPk(req.params.id);
@@ -1191,6 +1407,7 @@ const deleteBlockLeadById = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
 
 module.exports = {
   createLeads,

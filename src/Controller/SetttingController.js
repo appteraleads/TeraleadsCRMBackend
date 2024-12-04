@@ -11,6 +11,7 @@ const Role = require("../Modal/Role");
 const ClinicCloseDate = require("../Modal/ClinicCloseDate");
 const NotificationSetting = require("../Modal/NotificationSetting");
 const LeadSetting = require("../Modal/LeadSetting");
+const Notification = require("../Modal/Notification");
 const { Op } = require("sequelize");
 const SECRET_KEY = "ed1fd0c7deea4aa7023c2195fb097a27";
 
@@ -171,7 +172,7 @@ const handleGetLoginUserDetails = async (req, res) => {
         },
       ],
     });
-    
+
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
@@ -587,6 +588,86 @@ const getLeadSettingByClinicId = async (req, res) => {
   }
 };
 
+const getAllNotificationByUserId = async (req, res) => {
+  try {
+    // Extract user_id from the request parameters
+    const { user_id } = req.params; // Assuming user_id is passed as a route parameter
+
+    if (!user_id) {
+      return res.status(400).json({
+        message: "User ID is required",
+      });
+    }
+
+    // Fetch notifications for the specified user
+    const notifications = await Notification.findAll({
+      where: { user_id },
+      order: [["created_at", "DESC"]], // Order by created_at to get the latest notifications first
+    });
+
+    // Fetch count of unread notifications
+    const unreadCount = await Notification.count({
+      where: { user_id, status: "unread" },
+    });
+
+    if (notifications.length === 0) {
+      return res.status(404).json({
+        message: "No notifications found for this user",
+      });
+    }
+
+    // Return notifications along with unread count
+    res.status(200).json({
+      notifications,
+      unreadCount, // Include unread count in the response
+    });
+  } catch (error) {
+    console.error("Error fetching notifications:", error);
+
+    // Handle server errors
+    res.status(500).json({
+      message: "Failed to fetch notifications due to a server error",
+      error: error.message,
+    });
+  }
+};
+
+const markNotificationsAsRead = async (req, res) => {
+  try {
+    // Extract user_id from the request parameters
+    const { id } = req.params; // Assuming user_id is passed as a route parameter
+
+    // Update the status of all unread notifications for the given user to 'read'
+    const [updatedCount] = await Notification.update(
+      { status: "read" },
+      {
+        where: {
+          id,
+        },
+      }
+    );
+
+    if (updatedCount === 0) {
+      return res.status(404).json({
+        message: "No unread notifications found for this user",
+      });
+    }
+
+    // Return success response
+    res.status(200).json({
+      message: `${updatedCount} notification(s) marked as read`,
+    });
+  } catch (error) {
+    console.error("Error marking all notifications as read:", error);
+
+    // Handle server errors
+    res.status(500).json({
+      message: "Failed to mark all notifications as read due to a server error",
+      error: error.message,
+    });
+  }
+};
+
 // Export functions
 module.exports = {
   handleGetLoginUserDetails,
@@ -601,4 +682,6 @@ module.exports = {
   getNotificationSetting,
   createOrUpdateLeadSetting,
   getLeadSettingByClinicId,
+  getAllNotificationByUserId,
+  markNotificationsAsRead,
 };

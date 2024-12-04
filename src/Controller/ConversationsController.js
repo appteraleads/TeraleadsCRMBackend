@@ -103,7 +103,7 @@ const sendEmail = async (req, res) => {
 
     if (type === "Direct") {
       // Find lead by email
-      
+
       let lead;
       try {
         lead = await Lead.findOne({ where: { email: to } });
@@ -140,7 +140,6 @@ const sendEmail = async (req, res) => {
           // Call the sendEmail function (email sending logic)
           await sendEmailFun(to, from, subject, text);
         } catch (emailSendError) {
-          
           return res.status(500).json({ error: "Error sending email" });
         }
       }
@@ -528,6 +527,7 @@ const handleConversationUnseen = async (req, res) => {
 
 const handleConversationLead = async (req, res) => {
   const { id } = req.params;
+  const { conversations_lead } = req?.body;
   if (!id) {
     return res.status(400).json({ error: "lead_id is required" });
   }
@@ -538,7 +538,7 @@ const handleConversationLead = async (req, res) => {
       {
         created_on: new Date(),
         updated_on: new Date(),
-        conversations_lead: true,
+        conversations_lead,
       },
       { where: { id } }
     );

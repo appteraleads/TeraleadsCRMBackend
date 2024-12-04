@@ -4,46 +4,6 @@ const telnyxBaseUrl = "https://api.telnyx.com/v2";
 const Leads = require("../Modal/Lead");
 const Conversations = require("../Modal/Conversation");
 
-const outboundCallWithTelxyn = async (req, res) => {
-  try {
-    const { toNumber, fromNumber } = req.body;
-    console.log(toNumber, fromNumber);
-    // data: {
-    //   connection_id: process.env.TELNYX_CONNECTION_ID,
-    //   to: toNumber,  // The phone number to call
-    //   from: fromNumber,
-    // }
-    const response = await axios.post(
-      "https://api.telnyx.com/v2/outbound_calls",
-      {
-        data: {
-          to: "+17792003110", //ring central - user
-          from: "+13083050002", // this is for clint = clinic
-          connection_id: "2122061384203110274", // Telnyx connection ID
-        },
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.TELNYX_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-
-    res.json({
-      success: true,
-      call: response.data,
-      message: "Call initiated successfully",
-    });
-  } catch (error) {
-    res.status(500).json({
-      message: "Failed to initiate the call",
-      error: error.message,
-      error: error,
-    });
-  }
-};
-
 const outboundcallsWebhook = async (req, res) => {
   console.log(req, res);
 };
@@ -146,7 +106,7 @@ const getWebhook_deliveries = async () => {
 
 const webhook_getResponseFromTelnyx = async (req, res) => {
   const webhookEvent = req?.body?.data?.event_type;
-
+  console.log("dhasshsdkaskdas");
   if (webhookEvent === "message.received") {
     const receivedMessage = req?.body?.data?.payload?.text;
     const fromNumber = req?.body?.data?.payload.from?.phone_number;
@@ -156,7 +116,7 @@ const webhook_getResponseFromTelnyx = async (req, res) => {
 
     const lead = await Leads.findOne({
       where: { phone_number: fromNumber },
-      order: [["updated_on", "DESC"]], // or "created_at" if that's more relevant
+      order: [["updated_on", "DESC"]],
     });
 
     if (lead) {
@@ -197,6 +157,5 @@ module.exports = {
   getWebhook_deliveries,
   sendMessageFromTelnyxNumber,
   webhook_getResponseFromTelnyx,
-  outboundCallWithTelxyn,
-  outboundcallsWebhook
+  outboundcallsWebhook,
 };

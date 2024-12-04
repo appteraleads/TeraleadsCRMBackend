@@ -263,7 +263,7 @@ const login = async (req, res) => {
       user: {
         email: user.email,
         id: user.id,
-        userColumn: user.userColumn,
+        userColumn: user.user_column,
         refreshToken,
       },
     });

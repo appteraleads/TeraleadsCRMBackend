@@ -2,20 +2,23 @@ const jwt = require("jsonwebtoken");
 const User = require("../Modal/User"); // Adjust the path based on your project structure
 
 const verifyToken = async (req, res, next) => {
-  const token = req.headers.authorization?.split("Bearer ")[1]; 
-
-  if (!token) {
-    return res.status(403).send("Access denied. No token provided.");
-  }
-
   try {
+    // Extract the token from the Authorization header
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(403).json({ message: "Access denied. No token provided." });
+    }
+
+    const token = authHeader.split("Bearer ")[1];
+
     // Verify the token using the secret key
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    // Fetch the user from PostgreSQL database using the decoded email
+
+    // Fetch the user from the PostgreSQL database
     const user = await User.findOne({ where: { email: decoded.email } });
 
     if (!user) {
-      return res.status(404).send("User not found.");
+      return res.status(404).json({ message: "User not found." });
     }
 
     // Attach user info to the request
@@ -24,31 +27,23 @@ const verifyToken = async (req, res, next) => {
     // Proceed to the next middleware or route handler
     next();
   } catch (error) {
-
-    console.log(jwt.verify(token, process.env.JWT_SECRET))
     console.error("Token verification error:", error);
-    // if (error.name === "TokenExpiredError") {
-    //   const token = generateNewToken(req.user);
-    //   console.log('Token expired, new token generated')
-    //   return res.status(401).json({
-    //     message: "Token expired, new token generated",
-    //     token, 
-    //   });
-    // }
 
-    res.status(401).send("Invalid token.");
+    if (error instanceof jwt.TokenExpiredError) {
+      // Handle token expiration specifically
+      return res.status(401).json({ message: "Token expired. Please log in again." });
+    }
+
+    if (error instanceof jwt.JsonWebTokenError) {
+      // Handle invalid token errors
+      return res.status(401).json({ message: "Invalid token. Access denied." });
+    }
+
+    // General error handling
+    res.status(500).json({ message: "An error occurred while verifying the token." });
   }
 };
 
-// Helper function to generate a new JWT token
-const generateNewToken = (user) => {
-  console.log(user)
-  const payload = { email: user.email, id: user?.id };
-  const newToken = jwt.sign(payload, process.env.JWT_SECRET, {
-    expiresIn: "1h",
-  });
-  return newToken;
-};
 
 module.exports = {
   verifyToken,

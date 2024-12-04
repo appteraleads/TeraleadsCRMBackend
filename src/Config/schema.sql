@@ -249,3 +249,18 @@ CREATE TABLE
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_by VARCHAR(255) NOT NULL
     );
+
+CREATE TABLE
+    notifications (
+        id SERIAL PRIMARY KEY,
+        clinic_id INT,
+        user_id INT NOT NULL,
+        lead_id INT,
+        type VARCHAR(50) NOT NULL,
+        message TEXT,
+        website_name VARCHAR(100),
+        metadata JSONB,
+        status VARCHAR(20) DEFAULT 'unread',
+        created_at TIMESTAMP DEFAULT NOW (),
+        updated_at TIMESTAMP DEFAULT NOW ()
+    );

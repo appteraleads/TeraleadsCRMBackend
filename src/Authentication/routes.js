@@ -67,6 +67,7 @@ router.get(
 // );
 
 
+
 //  Setting Management Routes
 router.get("/getLoginUserDetails",middleware?.verifyToken, SettingController.handleGetLoginUserDetails);
 router.post("/send-otp-update-email",middleware?.verifyToken, SettingController.sendOtpForUpdateEmailPassword);
@@ -105,6 +106,10 @@ router.post('/appointment-settings/:id', middleware?.verifyToken,AppointmentCont
 router.post('/notification-settings',middleware?.verifyToken,SettingController.createOrUpdateNotificationSetting);
 router.get('/notification-settings',middleware?.verifyToken,SettingController.getNotificationSetting);
 
+router.get('/notification/:user_id',middleware?.verifyToken,SettingController.getAllNotificationByUserId);
+router.get('/notification/mark-read/:id',middleware?.verifyToken,SettingController.markNotificationsAsRead);
+
+
 //lead-settings
 router.post('/lead-settings',middleware?.verifyToken,SettingController.createOrUpdateLeadSetting);
 router.get('/lead-setting/:clinic_id',middleware?.verifyToken,SettingController.getLeadSettingByClinicId);
@@ -132,7 +137,7 @@ router.post("/form-leads-webhook", leadsController.formLeadWebhook);
 
 //  Telnyx Webhook Route
 router.post("/webhook_getResponseFromTelnyx", telnyxController.webhook_getResponseFromTelnyx);
-router.post("/telnyxCall", telnyxController.outboundCallWithTelxyn);
+
 
 router.get("/outbound-calls-webhook", telnyxController.outboundcallsWebhook);
 
@@ -171,5 +176,8 @@ router.post("/get-calenderDataForAppointment",middleware?.verifyToken, Appointme
 router.post("/createCallLog",middleware?.verifyToken, CallLogsController.createCallLog);
 router.get("/get-CallLog",middleware?.verifyToken, CallLogsController.getAllCallLogs);
 router.post("/updateCallLog",middleware?.verifyToken, CallLogsController.updateCallLog);
+
+
+router.get("/sendNotificationUpcomingAppointmentReminder", AppointmentController.sendNotificationUpcomingAppointmentReminder);
 
 module.exports = router;

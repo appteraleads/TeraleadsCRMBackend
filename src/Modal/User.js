@@ -17,6 +17,9 @@ User.init(
     activation_link: {
       type: DataTypes.TEXT,
     },
+    user_column:{
+      type: DataTypes.TEXT,
+    },
     activation_link_expire: {
       type: DataTypes.DATE,
     },

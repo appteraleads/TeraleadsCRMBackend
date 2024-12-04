@@ -7,6 +7,12 @@ const utc = require("dayjs/plugin/utc");
 const axios = require("axios");
 const { sendEmail } = require("./LeadsController");
 const jwt = require("jsonwebtoken");
+const Notification = require("../Modal/Notification");
+const NotificationSetting = require("../Modal/NotificationSetting");
+const {
+  NotificationsAppointmentReminder,
+} = require("../Common/NotificationTypeFormatehtml");
+const { Clinic, User } = require("../Modal");
 dayjs.extend(utc);
 
 const getOverviewDetails = async (req, res) => {
@@ -706,6 +712,92 @@ const getAppointmentSettingById = async (req, res) => {
   }
 };
 
+const sendNotificationUpcomingAppointmentReminder = async () => {
+  try {
+    const upcomingLeads = await Lead.findAll({
+      where: {
+        [Op.and]: [
+          { lead_status: "Appointment", appointment_status: "Confirmed" },
+          Sequelize.where(
+            Sequelize.fn(
+              "DATE_TRUNC",
+              Sequelize.literal("'minute'"), 
+              Sequelize.fn(
+                "TO_TIMESTAMP",
+                Sequelize.col("appointment_date_time"),
+                "YYYY-MM-DD HH24:MI:SS"
+              )
+            ),
+            {
+              [Op.eq]: Sequelize.literal(
+                "DATE_TRUNC('minute', CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Dubai') + INTERVAL '1 hour'"
+              ),
+            }
+          ),
+        ],
+      },
+      raw: true,
+    });
+
+    // If no upcoming leads, return early
+    if (!upcomingLeads || upcomingLeads.length === 0) {
+      console.log("No upcoming leads found.");
+      return;
+    }
+
+    // Create an array of promises to handle all notifications
+    const notificationPromises = upcomingLeads?.map(async (leadDetails) => {
+      const user = await User.findOne({
+        where: { clinic_id: leadDetails?.clinic_id },
+      });
+
+      const notificationSettingDetails = await NotificationSetting.findOne({
+        where: {
+          clinic_id: leadDetails?.clinic_id,
+          user_id: user?.id,
+        },
+      });
+
+      const message_html = NotificationsAppointmentReminder(
+        leadDetails?.first_name + " " + leadDetails?.last_name,
+        dayjs(leadDetails?.appointment_date_time, "MMM DD YYYY HH:mm A").format(
+          "MMM DD YYYY"
+        ) +
+          " " +
+          dayjs(
+            leadDetails?.appointment_date_time,
+            "MMM DD YYYY HH:mm A"
+          ).format("hh:mm A")
+      );
+
+      if (
+        notificationSettingDetails?.receive_inapp_notification &&
+        notificationSettingDetails?.notify_appointment_near
+      ) {
+        await Notification.create({
+          clinic_id: leadDetails.clinic_id,
+          user_id: parseInt(user?.id),
+          website_name: leadDetails.website_name,
+          lead_id: leadDetails.id,
+          type: "Appointments",
+          message: message_html,
+          metadata: leadDetails,
+          status: "unread",
+        });
+      }
+    });
+
+    // Wait for all notifications to be sent
+    await Promise.all(notificationPromises);
+
+    console.log("Notifications sent successfully.");
+    return true; // Return success if everything went well
+  } catch (error) {
+    console.error("Error fetching upcoming leads:", error);
+    return false; // Return false in case of error
+  }
+};
+
 module.exports = {
   getAllLeadsForAppointment,
   getOverviewDetails,
@@ -717,4 +809,5 @@ module.exports = {
   getAppointmentSettingsByClinic,
   getAppointmentSettingById,
   updateAppointmentSetting,
+  sendNotificationUpcomingAppointmentReminder,
 };
